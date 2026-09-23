@@ -1,0 +1,87 @@
+package tests;
+
+use ecosystem::bigint::{BigInt, BigUint};
+use ecosystem::bigmath::{Context, Float, Outcome, Rational, Rounding, MAX_BINARY_PRECISION};
+use std::testing;
+
+fn rational(numerator: i64, denominator: i64) -> Rational {
+    testing::expect_ok(
+        Rational::new(BigInt::from_i64(numerator), BigInt::from_i64(denominator)),
+        "test rational",
+    )
+}
+
+fn rounded(context: Context, numerator: i64, denominator: i64) -> Outcome {
+    testing::expect_ok(context.from_rational(rational(numerator, denominator)), "round to binary")
+}
+
+fn exact_text(value: Float) -> string {
+    testing::expect_ok(value.to_rational(), "exact binary value").to_string()
+}
+
+#[test]
+fn binary_rounding_tracks_midpoints_and_direction() -> () {
+    let even = testing::expect_ok(Context::new(3, Rounding::HalfEven), "even context");
+    let away = testing::expect_ok(Context::new(3, Rounding::HalfAway), "away context");
+    testing::assert_eq(exact_text(rounded(even, 9, 8).value), "1");
+    testing::assert_eq(exact_text(rounded(away, 9, 8).value), "5/4");
+    testing::assert_eq(exact_text(rounded(even, 11, 8).value), "3/2");
+    testing::assert_eq(exact_text(rounded(even, -9, 8).value), "-1");
+    for (mode, expected) in Vec::from_array(
+        [
+            (Rounding::TowardZero, "-1"),
+            (Rounding::AwayFromZero, "-5/4"),
+            (Rounding::Floor, "-5/4"),
+            (Rounding::Ceiling, "-1"),
+        ],
+    ) {
+        let context = testing::expect_ok(Context::new(3, mode), "directional context");
+        testing::assert_eq(exact_text(rounded(context, -9, 8).value), expected);
+    }
+    let third = rounded(testing::expect_ok(Context::new(4, Rounding::HalfEven), "p4"), 1, 3);
+    testing::assert_eq(exact_text(third.value), "11/32");
+    testing::assert(third.inexact);
+}
+
+#[test]
+fn binary_arithmetic_and_square_root_are_contextual() -> () {
+    let context = testing::expect_ok(Context::new(16, Rounding::HalfEven), "context");
+    let a = rounded(context, 3, 2).value;
+    let b = rounded(context, 1, 4).value;
+    testing::assert_eq(exact_text(testing::expect_ok(context.add(a, b), "add").value), "7/4");
+    testing::assert_eq(exact_text(testing::expect_ok(context.sub(a, b), "sub").value), "5/4");
+    testing::assert_eq(exact_text(testing::expect_ok(context.mul(a, b), "mul").value), "3/8");
+    testing::assert_eq(exact_text(testing::expect_ok(context.div(a, b), "div").value), "6");
+    testing::assert_eq(exact_text(testing::expect_ok(context.sub(a, a), "cancel").value), "0");
+    let sqrt_context = testing::expect_ok(Context::new(4, Rounding::HalfEven), "sqrt context");
+    let two = rounded(sqrt_context, 2, 1).value;
+    let square_root = testing::expect_ok(sqrt_context.sqrt(two), "sqrt two");
+    testing::assert_eq(exact_text(square_root.value), "11/8");
+    testing::assert(square_root.inexact);
+    testing::assert_eq(
+        exact_text(
+            testing::expect_ok(sqrt_context.sqrt(rounded(sqrt_context, 4, 1).value), "sqrt four").value,
+        ),
+        "2",
+    );
+    testing::assert(sqrt_context.sqrt(rounded(sqrt_context, -1, 1).value).is_err());
+    testing::assert(sqrt_context.div(a, rounded(sqrt_context, 0, 1).value).is_err());
+}
+
+#[test]
+fn precision_and_exponent_bounds_are_explicit() -> () {
+    testing::assert(Context::new(0, Rounding::HalfEven).is_err());
+    testing::assert(Context::new(MAX_BINARY_PRECISION + 1, Rounding::HalfEven).is_err());
+    testing::assert(Float::zero(0).is_err());
+    let context = testing::expect_ok(Context::new(5, Rounding::HalfEven), "bounded context");
+    let within = testing::expect_ok(BigUint::one().shl(4096), "last exponent");
+    testing::assert(context.from_bigint(BigInt::from_sign_magnitude(false, within)).is_ok());
+    let above = testing::expect_ok(BigUint::one().shl(4097), "past exponent");
+    testing::assert(context.from_bigint(BigInt::from_sign_magnitude(false, above)).is_err());
+    let below = testing::expect_ok(BigUint::one().shl(4097), "underflow denominator");
+    let tiny = testing::expect_ok(Rational::from_parts(BigInt::one(), below), "tiny rational");
+    testing::assert(context.from_rational(tiny).is_err());
+    let zero = testing::expect_ok(context.from_i64(0), "zero");
+    testing::assert(!zero.inexact);
+    testing::assert_eq(zero.value.to_string(), "0");
+}

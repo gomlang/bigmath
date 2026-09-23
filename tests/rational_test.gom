@@ -1,0 +1,60 @@
+package tests;
+
+use ecosystem::bigint::{BigInt, BigUint};
+use ecosystem::bigmath::{Rational, MAX_RATIONAL_BITS};
+use std::testing;
+
+fn signed(value: string) -> BigInt {
+    testing::expect_ok(BigInt::parse(value), "signed integer")
+}
+
+fn fraction(numerator: i64, denominator: i64) -> Rational {
+    testing::expect_ok(
+        Rational::new(BigInt::from_i64(numerator), BigInt::from_i64(denominator)),
+        "rational fraction",
+    )
+}
+
+#[test]
+fn fractions_normalize_sign_zero_and_large_factors() -> () {
+    testing::assert_eq(fraction(6, -8).to_string(), "-3/4");
+    testing::assert_eq(fraction(-6, -8).to_string(), "3/4");
+    testing::assert_eq(fraction(0, -99).to_string(), "0");
+    testing::assert_eq(fraction(0, 9), Rational::zero());
+    testing::assert(Rational::new(BigInt::one(), BigInt::zero()).is_err());
+    let large = signed("1234567890123456789012345678901234567890");
+    let factor = BigInt::from_i64(97);
+    let reduced = testing::expect_ok(
+        Rational::new(large.mul(factor), factor),
+        "reduce large factor",
+    );
+    testing::assert_eq(reduced.to_string(), large.to_string());
+    testing::assert_eq(reduced.denominator(), BigUint::one());
+}
+
+#[test]
+fn rational_arithmetic_is_exact_and_checked() -> () {
+    let a = fraction(2, 3);
+    let b = fraction(-5, 7);
+    testing::assert_eq(testing::expect_ok(a.add(b), "add").to_string(), "-1/21");
+    testing::assert_eq(testing::expect_ok(a.sub(b), "subtract").to_string(), "29/21");
+    testing::assert_eq(testing::expect_ok(a.mul(b), "multiply").to_string(), "-10/21");
+    testing::assert_eq(testing::expect_ok(a.div(b), "divide").to_string(), "-14/15");
+    testing::assert_eq(testing::expect_ok(b.reciprocal(), "reciprocal").to_string(), "-7/5");
+    testing::assert(a.cmp(b) == Ordering::Greater);
+    testing::assert(a.div(Rational::zero()).is_err());
+    testing::assert(Rational::zero().reciprocal().is_err());
+    testing::assert(fraction(4, 2).to_bigint_exact().is_ok());
+    testing::assert(fraction(1, 2).to_bigint_exact().is_err());
+}
+
+#[test]
+fn rational_budget_checks_result_after_reduction() -> () {
+    let power = testing::expect_ok(BigUint::one().shl(MAX_RATIONAL_BITS), "large power");
+    testing::assert(Rational::from_bigint(BigInt::from_sign_magnitude(false, power)).is_err());
+    let reducible = testing::expect_ok(
+        Rational::from_parts(BigInt::from_sign_magnitude(false, power), power),
+        "reduced value",
+    );
+    testing::assert_eq(reducible.to_string(), "1");
+}
