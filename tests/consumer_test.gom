@@ -1,0 +1,8 @@
+package tests;
+
+use consumer::bigmath as application;
+
+#[test]
+fn versioned_bigmath_consumer() -> () {
+    application::exercise();
+}

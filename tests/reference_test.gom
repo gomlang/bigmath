@@ -1,0 +1,92 @@
+package tests;
+
+use ecosystem::bigint::{BigInt};
+use ecosystem::bigmath::{Context, Outcome, Rational, Rounding};
+use std::fs;
+use std::num;
+use std::testing;
+
+fn integer(text: string) -> BigInt {
+    testing::expect_ok(BigInt::parse(text), "reference integer")
+}
+
+fn rational(numerator: string, denominator: string) -> Rational {
+    testing::expect_ok(
+        Rational::new(integer(numerator), integer(denominator)),
+        "reference rational",
+    )
+}
+
+fn rounding(name: string) -> Rounding {
+    match name {
+        "half_even" => Rounding::HalfEven,
+        "half_away" => Rounding::HalfAway,
+        "toward_zero" => Rounding::TowardZero,
+        "away_zero" => Rounding::AwayFromZero,
+        "floor" => Rounding::Floor,
+        _ => Rounding::Ceiling,
+    }
+}
+
+fn rounded(value: Outcome) -> (Rational, bool) {
+    (testing::expect_ok(value.value.to_rational(), "stored float as rational"), value.inexact)
+}
+
+fn evaluate(fields: Vec[string]) -> (Rational, bool) {
+    let left = rational(fields[3], fields[4]);
+    let right = rational(fields[5], fields[6]);
+    match fields[0] {
+        "radd" => (testing::expect_ok(left.add(right), "reference rational add"), false),
+        "rsub" => (testing::expect_ok(left.sub(right), "reference rational sub"), false),
+        "rmul" => (testing::expect_ok(left.mul(right), "reference rational mul"), false),
+        "rdiv" => (testing::expect_ok(left.div(right), "reference rational div"), false),
+        _ => {
+            let precision = testing::expect_ok(num::parse_int_structured(fields[1]), "precision");
+            let context = testing::expect_ok(
+                Context::new(precision, rounding(fields[2])),
+                "context",
+            );
+            if fields[0] == "round" {
+                rounded(testing::expect_ok(context.from_rational(left), "reference round"))
+            } else {
+                let first = testing::expect_ok(context.from_rational(left), "first operand").value;
+                let second = testing::expect_ok(context.from_rational(right), "second operand").value;
+                let value = match fields[0] {
+                    "add" => context.add(first, second),
+                    "sub" => context.sub(first, second),
+                    "mul" => context.mul(first, second),
+                    "div" => context.div(first, second),
+                    _ => context.sqrt(first),
+                };
+                rounded(testing::expect_ok(value, "reference float operation"))
+            }
+        },
+    }
+}
+
+#[test]
+fn independent_math_big_reference_vectors() -> () {
+    let source = testing::expect_ok(
+        fs::read_file_structured("tests/data/reference.tsv"),
+        "bigmath vectors",
+    );
+    let mut count = 0;
+    for line in source.split("\n") {
+        if line == "" {
+            continue;
+        }
+        let fields = line.split("\t");
+        testing::assert_eq(fields.len(), 10);
+        let (actual, inexact) = evaluate(fields);
+        let expected = rational(fields[7], fields[8]);
+        if actual != expected || inexact != (fields[9] == "true") {
+            println(line);
+            println(actual.to_string());
+            println(inexact);
+        }
+        testing::assert_eq(actual, expected);
+        testing::assert_eq(inexact, fields[9] == "true");
+        count += 1;
+    }
+    testing::assert_eq(count, 496);
+}
