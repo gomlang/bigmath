@@ -1,0 +1,346 @@
+package bigmath;
+
+use ecosystem::bigint::{BigInt, BigUint};
+
+pub const MAX_BINARY_PRECISION: isize = 4096;
+
+pub const MIN_BINARY_EXPONENT: isize = -4096;
+
+pub const MAX_BINARY_EXPONENT: isize = 4096;
+
+#[derive(PartialEq, Eq, Debug)]
+pub enum Rounding {
+    HalfEven,
+    HalfAway,
+    TowardZero,
+    AwayFromZero,
+    Floor,
+    Ceiling,
+}
+
+#[derive(PartialEq, Eq, Debug)]
+pub struct Context {
+    precision_value: isize,
+    rounding_value: Rounding,
+}
+
+pub struct Float {
+    significand_value: BigInt,
+    exponent_value: isize,
+    precision_value: isize,
+}
+
+pub struct Outcome {
+    pub value: Float,
+    pub inexact: bool,
+}
+
+fn shift_left(value: BigUint, count: isize) -> Result[BigUint, Error] {
+    value.shl(count).map_err(|error| Error::Integer(error.to_string()))
+}
+
+fn divide_unsigned(left: BigUint, right: BigUint) -> Result[(BigUint, BigUint), Error] {
+    left.div_rem(right).map_err(|error| Error::Integer(error.to_string()))
+}
+
+fn magnitude_exponent(numerator: BigUint, denominator: BigUint) -> Result[isize, Error] {
+    let mut exponent = numerator.bits() - denominator.bits();
+    let below = if exponent >= 0 {
+        numerator.cmp(shift_left(denominator, exponent)?) == Ordering::Less
+    } else {
+        shift_left(numerator, -exponent)?.cmp(denominator) == Ordering::Less
+    };
+    if below {
+        exponent -= 1;
+    }
+    Result::Ok(exponent)
+}
+
+fn should_round_up(
+    mode: Rounding,
+    negative: bool,
+    quotient: BigUint,
+    remainder: BigUint,
+    divisor: BigUint,
+) -> bool {
+    if remainder.is_zero() {
+        return false
+    }
+    match mode {
+        Rounding::TowardZero => false,
+        Rounding::AwayFromZero => true,
+        Rounding::Floor => negative,
+        Rounding::Ceiling => !negative,
+        Rounding::HalfAway => remainder.add(remainder).cmp(divisor) != Ordering::Less,
+        Rounding::HalfEven => {
+            let doubled = remainder.add(remainder);
+            doubled.cmp(divisor) == Ordering::Greater
+                || (doubled.cmp(divisor) == Ordering::Equal && quotient.is_odd())
+        },
+    }
+}
+
+fn finish_float(
+    magnitude: BigUint,
+    negative: bool,
+    exponent: isize,
+    precision: isize,
+    inexact: bool,
+) -> Result[Outcome, Error] {
+    let mut magnitude = magnitude;
+    let mut exponent = exponent;
+    if magnitude.bits() > precision {
+        magnitude = magnitude.shr(1).map_err(|error| Error::Integer(error.to_string()))?;
+        exponent += 1;
+    }
+    if exponent < MIN_BINARY_EXPONENT || exponent > MAX_BINARY_EXPONENT {
+        return Result::Err(Error::ExponentOutOfRange)
+    }
+    Result::Ok(
+        Outcome {
+            value: Float {
+                significand_value: BigInt::from_sign_magnitude(negative, magnitude),
+                exponent_value: exponent - precision + 1,
+                precision_value: precision,
+            },
+            inexact,
+        },
+    )
+}
+
+impl Context {
+    pub fn new(precision: isize, rounding: Rounding) -> Result[Context, Error] {
+        if precision < 1 || precision > MAX_BINARY_PRECISION {
+            Result::Err(Error::InvalidPrecision)
+        } else {
+            Result::Ok(Context { precision_value: precision, rounding_value: rounding })
+        }
+    }
+
+    pub fn standard() -> Context {
+        Context { precision_value: 53, rounding_value: Rounding::HalfEven }
+    }
+
+    pub fn precision(self: Context) -> isize {
+        self.precision_value
+    }
+
+    pub fn rounding(self: Context) -> Rounding {
+        self.rounding_value
+    }
+
+    pub fn from_i64(self: Context, value: i64) -> Result[Outcome, Error] {
+        self.from_rational(Rational::from_i64(value))
+    }
+
+    pub fn from_bigint(self: Context, value: BigInt) -> Result[Outcome, Error] {
+        self.from_rational(Rational::from_bigint(value)?)
+    }
+
+    pub fn from_rational(self: Context, value: Rational) -> Result[Outcome, Error] {
+        if value.is_zero() {
+            return Result::Ok(
+                Outcome {
+                    value: Float {
+                        significand_value: BigInt::zero(),
+                        exponent_value: 0,
+                        precision_value: self.precision_value,
+                    },
+                    inexact: false,
+                },
+            )
+        }
+        let negative = value.is_negative();
+        let numerator = value.numerator().abs();
+        let denominator = value.denominator();
+        let exponent = magnitude_exponent(numerator, denominator)?;
+        if exponent < MIN_BINARY_EXPONENT || exponent > MAX_BINARY_EXPONENT {
+            return Result::Err(Error::ExponentOutOfRange)
+        }
+        let shift = self.precision_value - 1 - exponent;
+        let (scaled_numerator, scaled_denominator) = if shift >= 0 {
+            (shift_left(numerator, shift)?, denominator)
+        } else {
+            (numerator, shift_left(denominator, -shift)?)
+        };
+        let (quotient, remainder) = divide_unsigned(scaled_numerator, scaled_denominator)?;
+        let increment = should_round_up(
+            self.rounding_value,
+            negative,
+            quotient,
+            remainder,
+            scaled_denominator,
+        );
+        let rounded = if increment {
+            quotient.add(BigUint::one())
+        } else {
+            quotient
+        };
+        finish_float(rounded, negative, exponent, self.precision_value, !remainder.is_zero())
+    }
+
+    pub fn round(self: Context, value: Float) -> Result[Outcome, Error] {
+        self.from_rational(value.to_rational()?)
+    }
+
+    pub fn add(self: Context, left: Float, right: Float) -> Result[Outcome, Error] {
+        self.from_rational(left.to_rational()?.add(right.to_rational()?)?)
+    }
+
+    pub fn sub(self: Context, left: Float, right: Float) -> Result[Outcome, Error] {
+        self.from_rational(left.to_rational()?.sub(right.to_rational()?)?)
+    }
+
+    pub fn mul(self: Context, left: Float, right: Float) -> Result[Outcome, Error] {
+        self.from_rational(left.to_rational()?.mul(right.to_rational()?)?)
+    }
+
+    pub fn div(self: Context, left: Float, right: Float) -> Result[Outcome, Error] {
+        self.from_rational(left.to_rational()?.div(right.to_rational()?)?)
+    }
+
+    pub fn sqrt(self: Context, value: Float) -> Result[Outcome, Error] {
+        if value.is_negative() {
+            return Result::Err(Error::NegativeSqrt)
+        }
+        if value.is_zero() {
+            return self.from_i64(0)
+        }
+        let rational = value.to_rational()?;
+        let numerator = rational.numerator().abs();
+        let denominator = rational.denominator();
+        let exponent = magnitude_exponent(numerator, denominator)?;
+        let mut root_exponent = exponent / 2;
+        if exponent < 0 && exponent % 2 != 0 {
+            root_exponent -= 1;
+        }
+        let shift = self.precision_value - 1 - root_exponent;
+        let (scaled_numerator, scaled_denominator) = if shift >= 0 {
+            (shift_left(numerator, 2 * shift)?, denominator)
+        } else {
+            (numerator, shift_left(denominator, -2 * shift)?)
+        };
+        let (quotient, _) = divide_unsigned(scaled_numerator, scaled_denominator)?;
+        let root = quotient.sqrt().map_err(|error| Error::Integer(error.to_string()))?;
+        let square = root.mul(root).mul(scaled_denominator);
+        let inexact = square.cmp(scaled_numerator) != Ordering::Equal;
+        let increment = if !inexact {
+            false
+        } else {
+            match self.rounding_value {
+                Rounding::TowardZero => false,
+                Rounding::Floor => false,
+                Rounding::AwayFromZero => true,
+                Rounding::Ceiling => true,
+                Rounding::HalfEven => {
+                    let midpoint = root.add(root).add(BigUint::one());
+                    let midpoint_square = midpoint.mul(midpoint).mul(scaled_denominator);
+                    let four_numerator = scaled_numerator.add(scaled_numerator);
+                    let four_numerator = four_numerator.add(four_numerator);
+                    let comparison = four_numerator.cmp(midpoint_square);
+                    comparison == Ordering::Greater
+                        || (comparison == Ordering::Equal && root.is_odd())
+                },
+                Rounding::HalfAway => {
+                    let midpoint = root.add(root).add(BigUint::one());
+                    let midpoint_square = midpoint.mul(midpoint).mul(scaled_denominator);
+                    let four_numerator = scaled_numerator.add(scaled_numerator);
+                    let four_numerator = four_numerator.add(four_numerator);
+                    four_numerator.cmp(midpoint_square) != Ordering::Less
+                },
+            }
+        };
+        let rounded = if increment {
+            root.add(BigUint::one())
+        } else {
+            root
+        };
+        finish_float(rounded, false, root_exponent, self.precision_value, inexact)
+    }
+}
+
+impl Float {
+    pub fn zero(precision: isize) -> Result[Float, Error] {
+        let context = Context::new(precision, Rounding::HalfEven)?;
+        Result::Ok(context.from_i64(0)?.value)
+    }
+
+    pub fn significand(self: Float) -> BigInt {
+        self.significand_value
+    }
+
+    pub fn exponent(self: Float) -> isize {
+        self.exponent_value
+    }
+
+    pub fn precision(self: Float) -> isize {
+        self.precision_value
+    }
+
+    pub fn normalized_exponent(self: Float) -> isize {
+        if self.is_zero() {
+            0
+        } else {
+            self.exponent_value + self.significand_value.bits() - 1
+        }
+    }
+
+    pub fn is_zero(self: Float) -> bool {
+        self.significand_value.is_zero()
+    }
+
+    pub fn is_negative(self: Float) -> bool {
+        self.significand_value.is_negative()
+    }
+
+    pub fn neg(self: Float) -> Float {
+        Float {
+            significand_value: self.significand_value.neg(),
+            exponent_value: self.exponent_value,
+            precision_value: self.precision_value,
+        }
+    }
+
+    pub fn abs(self: Float) -> Float {
+        if self.is_negative() {
+            self.neg()
+        } else {
+            self
+        }
+    }
+
+    pub fn to_rational(self: Float) -> Result[Rational, Error] {
+        if self.is_zero() {
+            return Result::Ok(Rational::zero())
+        }
+        if self.exponent_value >= 0 {
+            let magnitude = shift_left(self.significand_value.abs(), self.exponent_value)?;
+            Rational::from_bigint(BigInt::from_sign_magnitude(self.is_negative(), magnitude))
+        } else {
+            Rational::from_parts(
+                self.significand_value,
+                shift_left(BigUint::one(), -self.exponent_value)?,
+            )
+        }
+    }
+
+    pub fn cmp(self: Float, other: Float) -> Result[Ordering, Error] {
+        Result::Ok(self.to_rational()?.cmp(other.to_rational()?))
+    }
+
+    pub fn to_string(self: Float) -> string {
+        if self.is_zero() {
+            "0"
+        } else if self.exponent_value == 0 {
+            self.significand_value.to_string()
+        } else {
+            self.significand_value.to_string() + "*2^" + self.exponent_value.to_string()
+        }
+    }
+}
+
+impl Debug for Float {
+    fn debug(self: Float) -> string {
+        self.to_string()
+    }
+}

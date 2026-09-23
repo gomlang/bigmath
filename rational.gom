@@ -1,0 +1,202 @@
+package bigmath;
+
+use ecosystem::bigint::{BigInt, BigUint};
+
+pub const MAX_RATIONAL_BITS: isize = 8192;
+
+const MAX_INTERMEDIATE_BITS: isize = 16385;
+
+#[derive(PartialEq, Eq, Debug)]
+pub enum Error {
+    DivisionByZero,
+    InvalidPrecision,
+    ExponentOutOfRange,
+    LimitExceeded(string),
+    Inexact,
+    NegativeSqrt,
+    Integer(string),
+}
+
+impl ToString for Error {
+    fn to_string(self: Error) -> string {
+        match self {
+            Error::DivisionByZero => "division by zero",
+            Error::InvalidPrecision => "binary precision must be between 1 and 4096 bits",
+            Error::ExponentOutOfRange => "binary exponent must be between -4096 and 4096",
+            Error::LimitExceeded(resource) => "bigmath resource limit exceeded: " + resource,
+            Error::Inexact => "exact conversion would discard nonzero bits",
+            Error::NegativeSqrt => "square root of a negative value",
+            Error::Integer(message) => "integer operation: " + message,
+        }
+    }
+}
+
+#[derive(PartialEq, Eq, Debug)]
+pub struct Rational {
+    numerator_value: BigInt,
+    denominator_value: BigUint,
+}
+
+fn integer(value: BigUint) -> BigInt {
+    BigInt::from_sign_magnitude(false, value)
+}
+
+fn check_rational(value: Rational) -> Result[Rational, Error] {
+    if value.numerator_value.bits() > MAX_RATIONAL_BITS
+        || value.denominator_value.bits() > MAX_RATIONAL_BITS {
+        Result::Err(Error::LimitExceeded("rational bits"))
+    } else {
+        Result::Ok(value)
+    }
+}
+
+impl Rational {
+    pub fn zero() -> Rational {
+        Rational { numerator_value: BigInt::zero(), denominator_value: BigUint::one() }
+    }
+
+    pub fn one() -> Rational {
+        Rational::from_i64(1)
+    }
+
+    pub fn from_i64(value: i64) -> Rational {
+        Rational { numerator_value: BigInt::from_i64(value), denominator_value: BigUint::one() }
+    }
+
+    pub fn from_bigint(value: BigInt) -> Result[Rational, Error] {
+        check_rational(Rational { numerator_value: value, denominator_value: BigUint::one() })
+    }
+
+    pub fn new(numerator: BigInt, denominator: BigInt) -> Result[Rational, Error] {
+        if denominator.is_zero() {
+            return Result::Err(Error::DivisionByZero)
+        }
+        Rational::from_parts(
+            if denominator.is_negative() {
+                numerator.neg()
+            } else {
+                numerator
+            },
+            denominator.abs(),
+        )
+    }
+
+    pub fn from_parts(numerator: BigInt, denominator: BigUint) -> Result[Rational, Error] {
+        if denominator.is_zero() {
+            return Result::Err(Error::DivisionByZero)
+        }
+        if numerator.is_zero() {
+            return Result::Ok(Rational::zero())
+        }
+        if numerator.bits() > MAX_INTERMEDIATE_BITS || denominator.bits() > MAX_INTERMEDIATE_BITS {
+            return Result::Err(Error::LimitExceeded("rational intermediate bits"))
+        }
+        let common = numerator.abs().gcd(denominator);
+        let magnitude = numerator.abs().div(common).map_err(
+            |error| Error::Integer(error.to_string()),
+        )?;
+        let reduced_denominator = denominator.div(common).map_err(
+            |error| Error::Integer(error.to_string()),
+        )?;
+        check_rational(
+            Rational {
+                numerator_value: BigInt::from_sign_magnitude(numerator.is_negative(), magnitude),
+                denominator_value: reduced_denominator,
+            },
+        )
+    }
+
+    pub fn numerator(self: Rational) -> BigInt {
+        self.numerator_value
+    }
+
+    pub fn denominator(self: Rational) -> BigUint {
+        self.denominator_value
+    }
+
+    pub fn is_zero(self: Rational) -> bool {
+        self.numerator_value.is_zero()
+    }
+
+    pub fn is_negative(self: Rational) -> bool {
+        self.numerator_value.is_negative()
+    }
+
+    pub fn neg(self: Rational) -> Rational {
+        Rational {
+            numerator_value: self.numerator_value.neg(),
+            denominator_value: self.denominator_value,
+        }
+    }
+
+    pub fn abs(self: Rational) -> Rational {
+        Rational {
+            numerator_value: integer(self.numerator_value.abs()),
+            denominator_value: self.denominator_value,
+        }
+    }
+
+    pub fn add(self: Rational, other: Rational) -> Result[Rational, Error] {
+        let left = self.numerator_value.mul(integer(other.denominator_value));
+        let right = other.numerator_value.mul(integer(self.denominator_value));
+        Rational::from_parts(left.add(right), self.denominator_value.mul(other.denominator_value))
+    }
+
+    pub fn sub(self: Rational, other: Rational) -> Result[Rational, Error] {
+        self.add(other.neg())
+    }
+
+    pub fn mul(self: Rational, other: Rational) -> Result[Rational, Error] {
+        Rational::from_parts(
+            self.numerator_value.mul(other.numerator_value),
+            self.denominator_value.mul(other.denominator_value),
+        )
+    }
+
+    pub fn div(self: Rational, other: Rational) -> Result[Rational, Error] {
+        if other.is_zero() {
+            return Result::Err(Error::DivisionByZero)
+        }
+        let numerator = self.numerator_value.mul(integer(other.denominator_value));
+        Rational::from_parts(
+            if other.is_negative() {
+                numerator.neg()
+            } else {
+                numerator
+            },
+            self.denominator_value.mul(other.numerator_value.abs()),
+        )
+    }
+
+    pub fn reciprocal(self: Rational) -> Result[Rational, Error] {
+        if self.is_zero() {
+            return Result::Err(Error::DivisionByZero)
+        }
+        Rational::from_parts(
+            BigInt::from_sign_magnitude(self.is_negative(), self.denominator_value),
+            self.numerator_value.abs(),
+        )
+    }
+
+    pub fn cmp(self: Rational, other: Rational) -> Ordering {
+        self.numerator_value.mul(integer(other.denominator_value)).cmp(
+            other.numerator_value.mul(integer(self.denominator_value)),
+        )
+    }
+
+    pub fn to_bigint_exact(self: Rational) -> Result[BigInt, Error] {
+        if self.denominator_value.is_one() {
+            Result::Ok(self.numerator_value)
+        } else {
+            Result::Err(Error::Inexact)
+        }
+    }
+
+    pub fn to_string(self: Rational) -> string {
+        if self.denominator_value.is_one() {
+            self.numerator_value.to_string()
+        } else {
+            self.numerator_value.to_string() + "/" + self.denominator_value.to_string()
+        }
+    }
+}
