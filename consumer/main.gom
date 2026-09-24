@@ -1,0 +1,24 @@
+package main;
+
+use ecosystem::bigmath::{Context, Rational, Rounding};
+use ecosystem::bigint::{BigInt};
+use std::testing;
+
+pub fn exercise() -> () {
+    let input = testing::expect_ok(
+        Rational::new(BigInt::from_i64(355), BigInt::from_i64(113)),
+        "rational approximation",
+    );
+    let context = testing::expect_ok(Context::new(80, Rounding::HalfEven), "binary context");
+    let rounded = testing::expect_ok(context.from_rational(input), "binary approximation");
+    testing::assert(rounded.inexact);
+    testing::assert_eq(rounded.value.precision(), 80);
+    testing::assert_eq(input.to_string(), "355/113");
+    let recovered = testing::expect_ok(rounded.value.to_rational(), "stored binary value");
+    testing::assert(recovered.cmp(input) != Ordering::Equal);
+}
+
+fn main() -> () {
+    exercise();
+    println("bigmath consumer: ok")
+}
