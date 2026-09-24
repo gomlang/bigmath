@@ -49,7 +49,7 @@ return new values and leave their inputs unchanged.
 
 ## Verification
 
-From the repository root, run `just ecosystem-test bigmath`. Library tests
+From the repository root, run `(cd ../verification && just ecosystem-test bigmath)`. Library tests
 check reduction, signs, exact operations, midpoint and directional rounding,
 square roots, limits, and error paths. The versioned consumer uses independently
 generated Go `math/big` reference vectors for exact rational results and
