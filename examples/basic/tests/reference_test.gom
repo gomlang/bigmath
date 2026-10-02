@@ -1,5 +1,6 @@
 package tests;
 
+use ecosystem::bigmath::examples::basic as example_files;
 use ecosystem::bigint::{BigInt};
 use ecosystem::bigmath::{Context, Outcome, Rational, Rounding};
 use std::fs;
@@ -67,7 +68,7 @@ fn evaluate(fields: Vec[string]) -> (Rational, bool) {
 #[test]
 fn independent_math_big_reference_vectors() -> () {
     let source = testing::expect_ok(
-        fs::read_file_structured("tests/data/reference.tsv"),
+        fs::read_file_structured(example_files::fixture_path("tests/data/reference.tsv")),
         "bigmath vectors",
     );
     let mut count = 0;

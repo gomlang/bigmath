@@ -1,6 +1,6 @@
 package tests;
 
-use consumer::bigmath as application;
+use ecosystem::bigmath::examples::basic as application;
 
 #[test]
 fn versioned_bigmath_consumer() -> () {
