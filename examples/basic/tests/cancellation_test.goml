@@ -1,0 +1,17 @@
+package tests;
+
+use ecosystem::bigmath::{Rational};
+use ecosystem::bigint::{BigInt, BigUint};
+use std::testing;
+
+#[test]
+fn downstream_cancels_large_exact_scale_factors() -> () {
+    let magnitude = testing::expect_ok(BigUint::one().shl(4096), "factor");
+    let ratio = testing::expect_ok(Rational::from_parts(BigInt::from_i64(-3), magnitude), "ratio");
+    let multiplier = testing::expect_ok(
+        Rational::from_bigint(BigInt::from_sign_magnitude(false, magnitude)),
+        "multiplier",
+    );
+    testing::assert_eq(testing::expect_ok(ratio.mul(multiplier), "product"), Rational::from_i64(-3));
+    testing::assert_eq(testing::expect_ok(multiplier.div(multiplier), "quotient"), Rational::one());
+}

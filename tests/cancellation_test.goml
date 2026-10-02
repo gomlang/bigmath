@@ -1,0 +1,75 @@
+package tests;
+
+use ecosystem::bigmath::{Rational, Error};
+use ecosystem::bigint::{BigInt, BigUint};
+use std::testing;
+
+#[test]
+fn cross_cancelled_products_and_quotients_match_independent_reduction() -> () {
+    for a in -8..9 {
+        for b in 1..7 {
+            for c in -5..6 {
+                let left = testing::expect_ok(
+                    Rational::new(BigInt::from_i64(a.to_i64()), BigInt::from_i64(b.to_i64())),
+                    "left",
+                );
+                let right = testing::expect_ok(
+                    Rational::new(BigInt::from_i64(c.to_i64()), BigInt::from_i64(6)),
+                    "right",
+                );
+                let product = testing::expect_ok(left.mul(right), "product");
+                let expected = testing::expect_ok(
+                    Rational::new(
+                        BigInt::from_i64((a * c).to_i64()),
+                        BigInt::from_i64((b * 6).to_i64()),
+                    ),
+                    "reference product",
+                );
+                testing::assert_eq(product, expected);
+                if c != 0 {
+                    let expected = testing::expect_ok(
+                        Rational::new(
+                            BigInt::from_i64((a * 6).to_i64()),
+                            BigInt::from_i64((b * c).to_i64()),
+                        ),
+                        "reference quotient",
+                    );
+                    testing::assert_eq(testing::expect_ok(left.div(right), "quotient"), expected);
+                } else {
+                    testing::assert_eq(
+                        testing::expect_err(left.div(right), "zero divisor"),
+                        Error::DivisionByZero,
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn cancellation_near_bit_budget_preserves_sign_and_canonical_values() -> () {
+    let power = testing::expect_ok(BigUint::one().shl(8191), "large power");
+    let adjacent = testing::expect_ok(power.sub(BigUint::one()), "adjacent");
+    let value = testing::expect_ok(
+        Rational::from_parts(BigInt::from_sign_magnitude(true, power), adjacent),
+        "fraction",
+    );
+    let inverse = testing::expect_ok(value.reciprocal(), "reciprocal");
+    testing::assert_eq(testing::expect_ok(value.mul(inverse), "cross product"), Rational::one());
+    testing::assert_eq(
+        testing::expect_ok(value.div(value.neg()), "negative self quotient"),
+        Rational::from_i64(-1),
+    );
+    testing::assert_eq(
+        testing::expect_ok(value.mul(Rational::zero()), "zero product"),
+        Rational::zero(),
+    );
+    let integral = testing::expect_ok(
+        Rational::from_bigint(BigInt::from_sign_magnitude(false, power)),
+        "large integer",
+    );
+    testing::assert(integral.mul(Rational::from_i64(2)).is_err());
+    testing::assert(
+        integral.div(testing::expect_ok(Rational::new(BigInt::one(), BigInt::from_i64(2)), "half")).is_err(),
+    );
+}
