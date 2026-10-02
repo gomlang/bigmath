@@ -1,0 +1,19 @@
+package tests;
+
+use ecosystem::bigint::{BigInt};
+use ecosystem::bigmath::{Rational, Rounding};
+use std::testing;
+
+#[test]
+fn downstream_rounds_exact_fractions_without_float_conversion() -> () {
+    let numerator = testing::expect_ok(BigInt::parse("18014398509481987"), "integer");
+    let value = testing::expect_ok(Rational::new(numerator, BigInt::from_i64(2)), "fraction");
+    testing::assert_eq(
+        testing::expect_ok(value.round_to_bigint(Rounding::HalfEven), "half even").to_string(),
+        "9007199254740994",
+    );
+    testing::assert_eq(
+        testing::expect_ok(value.neg().round_to_bigint(Rounding::Ceiling), "ceiling").to_string(),
+        "-9007199254740993",
+    );
+}

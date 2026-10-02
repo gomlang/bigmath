@@ -1,0 +1,82 @@
+package tests;
+
+use ecosystem::bigint::{BigInt, BigUint};
+use ecosystem::bigmath::{Rational, Rounding};
+use std::testing;
+
+#[test]
+fn rational_integer_rounding_matches_small_integer_arithmetic() -> () {
+    for numerator in -60..61 {
+        for denominator in 1..12 {
+            let rational = testing::expect_ok(
+                Rational::new(
+                    BigInt::from_i64(numerator.to_i64()),
+                    BigInt::from_i64(denominator.to_i64()),
+                ),
+                "fraction",
+            );
+            let magnitude = if numerator < 0 {
+                -numerator
+            } else {
+                numerator
+            };
+            let quotient = magnitude / denominator;
+            let remainder = magnitude % denominator;
+            for mode in Vec::from_array(
+                [
+                    Rounding::HalfEven,
+                    Rounding::HalfAway,
+                    Rounding::TowardZero,
+                    Rounding::AwayFromZero,
+                    Rounding::Floor,
+                    Rounding::Ceiling,
+                ],
+            ) {
+                let increment = remainder != 0
+                    && match mode {
+                        Rounding::HalfEven => 2 * remainder > denominator
+                            || (2 * remainder == denominator && quotient % 2 != 0),
+                        Rounding::HalfAway => 2 * remainder >= denominator,
+                        Rounding::TowardZero => false,
+                        Rounding::AwayFromZero => true,
+                        Rounding::Floor => numerator < 0,
+                        Rounding::Ceiling => numerator > 0,
+                    };
+                let rounded = quotient
+                    + if increment {
+                        1
+                    } else {
+                        0
+                    };
+                let expected = if numerator < 0 {
+                    -rounded
+                } else {
+                    rounded
+                };
+                testing::assert(
+                    testing::expect_ok(rational.round_to_bigint(mode), "round").to_i64()
+                        == Option::Some(expected.to_i64()),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn rational_integer_rounding_preserves_large_midpoints() -> () {
+    let whole = testing::expect_ok(BigUint::one().shl(4096), "large integer");
+    let numerator = BigInt::from_sign_magnitude(false, whole.add(whole).add(BigUint::one()));
+    let half = testing::expect_ok(
+        Rational::from_parts(numerator, BigUint::from_u64(2)),
+        "large half",
+    );
+    testing::assert_eq(
+        testing::expect_ok(half.round_to_bigint(Rounding::HalfEven), "even").abs(),
+        whole,
+    );
+    testing::assert_eq(
+        testing::expect_ok(half.neg().round_to_bigint(Rounding::Floor), "floor"),
+        BigInt::from_sign_magnitude(true, whole.add(BigUint::one())),
+    );
+    testing::assert(half.to_bigint_exact().is_err());
+}
