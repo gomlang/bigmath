@@ -14,6 +14,13 @@ by their greatest common divisor, and stores zero as `0/1`. `from_parts` accepts
 an unsigned denominator. `add`, `sub`, `mul`, `div`, `reciprocal`, `cmp`, `neg`,
 `abs`, and exact integer conversion operate without floating-point
 intermediates. `to_string` uses `n/d`, or `n` when the denominator is one.
+`round_to_bigint(rounding)` converts directly to an integer using any of the six
+`Rounding` modes below, without an intermediate binary float or loss of large
+integer digits. HalfEven resolves exact halves to an even integer; HalfAway
+resolves them away from zero. TowardZero truncates; Floor and Ceiling round
+toward negative and positive infinity. `to_bigint_exact` continues to reject
+fractions with a nonzero remainder.
+
 Stored numerator and denominator magnitudes have at most 8192 bits each.
 Arithmetic may use an intermediate of at most 16385 bits so cancellation and
 reduction can produce an in-range result. Inputs beyond that intermediate

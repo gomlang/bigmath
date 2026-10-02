@@ -184,6 +184,24 @@ impl Rational {
         )
     }
 
+    pub fn round_to_bigint(self: Rational, rounding: Rounding) -> Result[BigInt, Error] {
+        let (quotient, remainder) = self.numerator_value.abs().div_rem(self.denominator_value).map_err(
+            |error| Error::Integer(error.to_string()),
+        )?;
+        let rounded = if should_round_up(
+            rounding,
+            self.is_negative(),
+            quotient,
+            remainder,
+            self.denominator_value,
+        ) {
+            quotient.add(BigUint::one())
+        } else {
+            quotient
+        };
+        Result::Ok(BigInt::from_sign_magnitude(self.is_negative(), rounded))
+    }
+
     pub fn to_bigint_exact(self: Rational) -> Result[BigInt, Error] {
         if self.denominator_value.is_one() {
             Result::Ok(self.numerator_value)
