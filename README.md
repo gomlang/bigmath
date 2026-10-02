@@ -25,6 +25,11 @@ Stored numerator and denominator magnitudes have at most 8192 bits each.
 Arithmetic may use an intermediate of at most 16385 bits so cancellation and
 reduction can produce an in-range result. Inputs beyond that intermediate
 budget or results beyond the stored budget return `Error::LimitExceeded`.
+Multiplication and division cross-cancel numerator/denominator factors before
+multiplying. Since input rationals are canonical, the resulting products are
+already reduced; this avoids constructing large factors that would immediately
+cancel. Zero remains `0/1`, and final numerator/denominator limits still apply.
+Addition and comparison continue to use full cross products.
 
 ## Binary Float
 

@@ -41,6 +41,10 @@ fn integer(value: BigUint) -> BigInt {
     BigInt::from_sign_magnitude(false, value)
 }
 
+fn reduced(value: BigUint, common: BigUint) -> Result[BigUint, Error] {
+    value.div(common).map_err(|error| Error::Integer(error.to_string()))
+}
+
 fn check_rational(value: Rational) -> Result[Rational, Error] {
     if value.numerator_value.bits() > MAX_RATIONAL_BITS
         || value.denominator_value.bits() > MAX_RATIONAL_BITS {
@@ -147,9 +151,25 @@ impl Rational {
     }
 
     pub fn mul(self: Rational, other: Rational) -> Result[Rational, Error] {
-        Rational::from_parts(
-            self.numerator_value.mul(other.numerator_value),
-            self.denominator_value.mul(other.denominator_value),
+        if self.is_zero() || other.is_zero() {
+            return Result::Ok(Rational::zero())
+        }
+        let left_common = self.numerator_value.abs().gcd(other.denominator_value);
+        let right_common = other.numerator_value.abs().gcd(self.denominator_value);
+        let numerator = reduced(self.numerator_value.abs(), left_common)?.mul(
+            reduced(other.numerator_value.abs(), right_common)?,
+        );
+        let denominator = reduced(self.denominator_value, right_common)?.mul(
+            reduced(other.denominator_value, left_common)?,
+        );
+        check_rational(
+            Rational {
+                numerator_value: BigInt::from_sign_magnitude(
+                    self.is_negative() != other.is_negative(),
+                    numerator,
+                ),
+                denominator_value: denominator,
+            },
         )
     }
 
@@ -157,14 +177,25 @@ impl Rational {
         if other.is_zero() {
             return Result::Err(Error::DivisionByZero)
         }
-        let numerator = self.numerator_value.mul(integer(other.denominator_value));
-        Rational::from_parts(
-            if other.is_negative() {
-                numerator.neg()
-            } else {
-                numerator
+        if self.is_zero() {
+            return Result::Ok(Rational::zero())
+        }
+        let numerator_common = self.numerator_value.abs().gcd(other.numerator_value.abs());
+        let denominator_common = self.denominator_value.gcd(other.denominator_value);
+        let numerator = reduced(self.numerator_value.abs(), numerator_common)?.mul(
+            reduced(other.denominator_value, denominator_common)?,
+        );
+        let denominator = reduced(self.denominator_value, denominator_common)?.mul(
+            reduced(other.numerator_value.abs(), numerator_common)?,
+        );
+        check_rational(
+            Rational {
+                numerator_value: BigInt::from_sign_magnitude(
+                    self.is_negative() != other.is_negative(),
+                    numerator,
+                ),
+                denominator_value: denominator,
             },
-            self.denominator_value.mul(other.numerator_value.abs()),
         )
     }
 
