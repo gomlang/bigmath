@@ -1,0 +1,114 @@
+package tests;
+
+use ecosystem::bigint::{BigInt, BigUint};
+use ecosystem::bigmath::{Context, Error, Rational, Rounding, MAX_BINARY_PRECISION};
+use std::testing;
+
+#[test]
+fn rounding_carry_can_reach_the_minimum_binary_exponent() -> () {
+    let denominator = testing::expect_ok(BigUint::one().shl(4100), "midpoint denominator");
+    let midpoint = testing::expect_ok(
+        Rational::from_parts(BigInt::from_u64(15), denominator),
+        "midpoint below the exponent boundary",
+    );
+    for negative in Vec::from_array([false, true]) {
+        let value = if negative {
+            midpoint.neg()
+        } else {
+            midpoint
+        };
+        for mode in Vec::from_array(
+            [
+                Rounding::HalfEven,
+                Rounding::HalfAway,
+                Rounding::TowardZero,
+                Rounding::AwayFromZero,
+                Rounding::Floor,
+                Rounding::Ceiling,
+            ],
+        ) {
+            let context = testing::expect_ok(Context::new(3, mode), "context");
+            let carries = match mode {
+                Rounding::HalfEven => true,
+                Rounding::HalfAway => true,
+                Rounding::TowardZero => false,
+                Rounding::AwayFromZero => true,
+                Rounding::Floor => negative,
+                Rounding::Ceiling => !negative,
+            };
+            if carries {
+                let result = testing::expect_ok(
+                    context.from_rational(value),
+                    "representable rounded result",
+                );
+                testing::assert_eq(result.value.normalized_exponent(), -4096);
+                testing::assert_eq(
+                    result.value.significand(),
+                    BigInt::from_i64(
+                        if negative {
+                            -4
+                        } else {
+                            4
+                        },
+                    ),
+                );
+                testing::assert(result.inexact);
+            } else {
+                testing::assert_eq(
+                    testing::expect_err(context.from_rational(value), "rounded underflow"),
+                    Error::ExponentOutOfRange,
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn minimum_exponent_carry_works_at_maximum_precision_and_in_arithmetic() -> () {
+    let power = testing::expect_ok(BigUint::one().shl(4096), "minimum exponent denominator");
+    let below = testing::expect_ok(
+        Rational::from_parts(BigInt::one(), power.add(BigUint::one())),
+        "slightly below minimum",
+    );
+    let maximum = testing::expect_ok(
+        Context::new(MAX_BINARY_PRECISION, Rounding::AwayFromZero),
+        "maximum precision",
+    );
+    let rounded = testing::expect_ok(maximum.from_rational(below), "carry at maximum precision");
+    testing::assert_eq(rounded.value.normalized_exponent(), -4096);
+    testing::assert_eq(rounded.value.significand().bits(), MAX_BINARY_PRECISION);
+    testing::assert(rounded.inexact);
+    let context = testing::expect_ok(Context::new(3, Rounding::HalfEven), "arithmetic context");
+    let minimum = testing::expect_ok(
+        context.from_rational(
+            testing::expect_ok(Rational::from_parts(BigInt::one(), power), "minimum"),
+        ),
+        "minimum float",
+    ).value;
+    let finer = testing::expect_ok(Context::new(4, Rounding::HalfEven), "operand context");
+    let fraction = testing::expect_ok(
+        finer.from_rational(
+            testing::expect_ok(
+                Rational::new(BigInt::from_i64(15), BigInt::from_i64(16)),
+                "fifteen sixteenths",
+            ),
+        ),
+        "fraction float",
+    ).value;
+    let result = testing::expect_ok(context.mul(minimum, fraction), "rounded product");
+    testing::assert(
+        testing::expect_ok(result.value.cmp(minimum), "compare minimum") == Ordering::Equal,
+    );
+    testing::assert(result.inexact);
+    let too_small = testing::expect_ok(
+        Rational::from_parts(
+            BigInt::one(),
+            testing::expect_ok(power.shl(2), "two exponents below minimum"),
+        ),
+        "too small",
+    );
+    testing::assert_eq(
+        testing::expect_err(maximum.from_rational(too_small), "unrecoverable underflow"),
+        Error::ExponentOutOfRange,
+    );
+}

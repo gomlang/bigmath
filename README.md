@@ -46,14 +46,17 @@ exponent, representing `significand × 2^exponent`. The significand has exactly
 the context precision in bits. Its normalized most-significant-bit exponent is
 in `-4096..4096`; a result outside that interval returns
 `Error::ExponentOutOfRange` rather than silently overflowing, underflowing, or
-creating infinity or a subnormal. Zero is canonical and unsigned. `to_rational`
-recovers the exact stored value; `to_string` displays the binary representation
+creating infinity or a subnormal. Zero is canonical and unsigned.
+An exact input just below the minimum exponent can still succeed when rounding
+carries its significand into exponent -4096; the lower limit applies to the
+rounded result. Results that remain below the limit still return an error.
+`to_rational` recovers the exact stored value; `to_string` displays the binary representation
 as `significand*2^exponent` when the exponent is nonzero. `sqrt` rejects negative
 inputs, and division rejects zero. NaN, infinities, decimal parsing/formatting,
 operator overloading, and compiler-enforced constant time are not provided.
 
 The rational 8192-bit limit bounds stored Float operands and their exact
-arithmetic inputs. Binary rounding may shift an intermediate by at most 8191
+arithmetic inputs. Binary rounding may shift an intermediate by at most 8192
 bits; square-root rounding may use about 20480-bit scratch integers. A
 recoverable resource error may occur before a mathematical exponent error when
 extreme operands create an exact intermediate outside that budget. Operations

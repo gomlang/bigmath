@@ -154,7 +154,9 @@ impl Context {
         let numerator = value.numerator().abs();
         let denominator = value.denominator();
         let exponent = magnitude_exponent(numerator, denominator)?;
-        if exponent < MIN_BINARY_EXPONENT || exponent > MAX_BINARY_EXPONENT {
+        // A rounding carry can raise the exponent by one. Let finish_float
+        // check the final lower boundary after that carry has been applied.
+        if exponent < MIN_BINARY_EXPONENT - 1 || exponent > MAX_BINARY_EXPONENT {
             return Result::Err(Error::ExponentOutOfRange)
         }
         let shift = self.precision_value - 1 - exponent;
