@@ -141,9 +141,42 @@ impl Rational {
     }
 
     pub fn add(self: Rational, other: Rational) -> Result[Rational, Error] {
-        let left = self.numerator_value.mul(integer(other.denominator_value));
-        let right = other.numerator_value.mul(integer(self.denominator_value));
-        Rational::from_parts(left.add(right), self.denominator_value.mul(other.denominator_value))
+        if self.denominator_value == other.denominator_value {
+            return Rational::from_parts(
+                self.numerator_value.add(other.numerator_value),
+                self.denominator_value,
+            )
+        }
+        let common = self.denominator_value.gcd(other.denominator_value);
+        if common.is_one() {
+            return check_rational(
+                Rational {
+                    numerator_value: self.numerator_value.mul(integer(other.denominator_value)).add(
+                        other.numerator_value.mul(integer(self.denominator_value)),
+                    ),
+                    denominator_value: self.denominator_value.mul(other.denominator_value),
+                },
+            )
+        }
+        let left_denominator = reduced(self.denominator_value, common)?;
+        let right_denominator = reduced(other.denominator_value, common)?;
+        let numerator = self.numerator_value.mul(integer(right_denominator)).add(
+            other.numerator_value.mul(integer(left_denominator)),
+        );
+        // Canonical inputs make the numerator coprime to both reduced
+        // denominators. Only factors from their original GCD can still cancel.
+        let cancellation = numerator.abs().gcd(common);
+        check_rational(
+            Rational {
+                numerator_value: BigInt::from_sign_magnitude(
+                    numerator.is_negative(),
+                    reduced(numerator.abs(), cancellation)?,
+                ),
+                denominator_value: left_denominator.mul(
+                    reduced(other.denominator_value, cancellation)?,
+                ),
+            },
+        )
     }
 
     pub fn sub(self: Rational, other: Rational) -> Result[Rational, Error] {

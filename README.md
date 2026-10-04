@@ -28,8 +28,11 @@ budget or results beyond the stored budget return `Error::LimitExceeded`.
 Multiplication and division cross-cancel numerator/denominator factors before
 multiplying. Since input rationals are canonical, the resulting products are
 already reduced; this avoids constructing large factors that would immediately
-cancel. Zero remains `0/1`, and final numerator/denominator limits still apply.
-Addition and comparison continue to use full cross products.
+cancel. Addition and subtraction first remove common denominator factors before
+forming cross products, then cancel only against the original denominator GCD.
+Equal denominators need only a numerator addition; coprime denominators produce
+an already reduced result. Zero remains `0/1`, and final numerator/denominator
+limits still apply. Comparison continues to use full cross products.
 
 ## Binary Float
 

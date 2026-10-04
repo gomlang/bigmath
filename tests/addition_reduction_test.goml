@@ -1,0 +1,54 @@
+package tests;
+
+use ecosystem::bigmath::{Rational, Error};
+use ecosystem::bigint::{BigInt, BigUint};
+use std::testing;
+
+#[test]
+fn rational_addition_reduces_shared_denominators_before_enforcing_result_limits() -> () {
+    let power = testing::expect_ok(BigUint::one().shl(8191), "large power");
+    let denominator = testing::expect_ok(power.sub(BigUint::one()), "odd denominator");
+    let top = testing::expect_ok(denominator.sub(BigUint::one()), "complement numerator");
+    let small = testing::expect_ok(
+        Rational::from_parts(BigInt::one(), denominator),
+        "small fraction",
+    );
+    let complement = testing::expect_ok(
+        Rational::from_parts(BigInt::from_sign_magnitude(false, top), denominator),
+        "complement",
+    );
+    testing::assert_eq(testing::expect_ok(small.add(complement), "unit sum"), Rational::one());
+    testing::assert_eq(testing::expect_ok(small.sub(small), "zero difference"), Rational::zero());
+    testing::assert_eq(
+        testing::expect_ok(small.neg().sub(complement), "negative unit"),
+        Rational::from_i64(-1),
+    );
+    let common = testing::expect_ok(BigUint::one().shl(8190), "common factor");
+    let left = testing::expect_ok(Rational::from_parts(BigInt::one(), common), "left");
+    let right = testing::expect_ok(
+        Rational::from_parts(BigInt::one(), common.mul(BigUint::from_u64(3))),
+        "right",
+    );
+    let expected = testing::expect_ok(
+        Rational::from_parts(
+            BigInt::one(),
+            testing::expect_ok(common.shr(2), "reduced common").mul(BigUint::from_u64(3)),
+        ),
+        "four over shared denominator",
+    );
+    testing::assert_eq(testing::expect_ok(left.add(right), "reduced sum"), expected);
+    testing::assert_eq(testing::expect_ok(right.add(left), "commuted sum"), expected);
+    let third = testing::expect_ok(Rational::new(BigInt::one(), BigInt::from_i64(3)), "third");
+    testing::assert_eq(
+        testing::expect_err(small.add(third), "coprime denominator exceeds result budget"),
+        Error::LimitExceeded("rational bits"),
+    );
+    let integer = testing::expect_ok(
+        Rational::from_bigint(BigInt::from_sign_magnitude(false, power)),
+        "large integer",
+    );
+    testing::assert_eq(
+        testing::expect_err(integer.add(integer), "numerator exceeds result budget"),
+        Error::LimitExceeded("rational bits"),
+    );
+}
