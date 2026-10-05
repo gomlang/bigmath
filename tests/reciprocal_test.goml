@@ -1,0 +1,86 @@
+package tests;
+
+use ecosystem::bigint::{BigInt, BigUint};
+use ecosystem::bigmath::{Context, Error, Rational, Rounding, MAX_RATIONAL_BITS};
+use std::testing;
+
+fn reciprocal_input(numerator: i64, denominator: i64) -> Rational {
+    testing::expect_ok(
+        Rational::new(BigInt::from_i64(numerator), BigInt::from_i64(denominator)),
+        "reciprocal input",
+    )
+}
+
+#[test]
+fn reciprocal_preserves_canonical_constructor_and_arithmetic_results() -> () {
+    let values = Vec::from_array(
+        [
+            reciprocal_input(10, -14),
+            testing::expect_ok(
+                Rational::from_parts(BigInt::from_i64(-15), BigUint::from_u64(21)),
+                "parts",
+            ),
+            reciprocal_input(5, 7).neg(),
+            reciprocal_input(-5, 7).abs().neg(),
+            testing::expect_ok(reciprocal_input(-2, 7).add(reciprocal_input(-3, 7)), "sum"),
+            testing::expect_ok(reciprocal_input(2, 7).sub(Rational::one()), "difference"),
+            testing::expect_ok(reciprocal_input(-10, 21).mul(reciprocal_input(3, 2)), "product"),
+            testing::expect_ok(reciprocal_input(-10, 7).div(Rational::from_i64(2)), "quotient"),
+        ],
+    );
+    for value in values {
+        let inverse = testing::expect_ok(value.reciprocal(), "inverse");
+        testing::assert_eq(inverse.to_string(), "-7/5");
+        testing::assert_eq(testing::expect_ok(inverse.reciprocal(), "double inverse"), value);
+        testing::assert_eq(
+            testing::expect_ok(value.mul(inverse), "inverse identity"),
+            Rational::one(),
+        );
+        testing::assert_eq(value.to_string(), "-5/7");
+    }
+    for value in Vec::from_array([Rational::one(), Rational::from_i64(-1)]) {
+        testing::assert_eq(testing::expect_ok(value.reciprocal(), "unit inverse"), value);
+    }
+    let integer = testing::expect_ok(Rational::from_bigint(BigInt::from_i64(-7)), "integer");
+    testing::assert_eq(
+        testing::expect_ok(integer.reciprocal(), "integer inverse").to_string(),
+        "-1/7",
+    );
+    let context = testing::expect_ok(Context::new(4, Rounding::HalfEven), "context");
+    let binary = testing::expect_ok(context.from_rational(reciprocal_input(-5, 8)), "binary").value;
+    let rational = testing::expect_ok(binary.to_rational(), "exact binary rational");
+    testing::assert_eq(
+        testing::expect_ok(rational.reciprocal(), "binary inverse").to_string(),
+        "-8/5",
+    );
+    testing::assert_eq(
+        testing::expect_err(Rational::zero().reciprocal(), "zero inverse"),
+        Error::DivisionByZero,
+    );
+}
+
+#[test]
+fn reciprocal_at_bit_limit_keeps_sign_and_detached_storage() -> () {
+    let power = testing::expect_ok(BigUint::one().shl(MAX_RATIONAL_BITS - 1), "boundary power");
+    let numerator = power.add(BigUint::one());
+    let denominator = power.add(BigUint::from_u64(3));
+    // These odd integers differ by two, so their GCD is one.
+    let factor = testing::expect_ok(BigUint::one().shl(MAX_RATIONAL_BITS), "common factor");
+    let value = testing::expect_ok(
+        Rational::from_parts(
+            BigInt::from_sign_magnitude(true, numerator.mul(factor)),
+            denominator.mul(factor),
+        ),
+        "reduce intermediate to boundary",
+    );
+    let inverse = testing::expect_ok(value.reciprocal(), "boundary inverse");
+    let exported_numerator = inverse.numerator().abs().to_limbs_le();
+    let exported_denominator = inverse.denominator().to_limbs_le();
+    exported_numerator[0] = 0;
+    exported_denominator[0] = 0;
+    testing::assert_eq(inverse.numerator(), BigInt::from_sign_magnitude(true, denominator));
+    testing::assert_eq(inverse.denominator(), numerator);
+    testing::assert_eq(value.numerator(), BigInt::from_sign_magnitude(true, numerator));
+    testing::assert_eq(value.denominator(), denominator);
+    testing::assert_eq(testing::expect_ok(inverse.reciprocal(), "double boundary inverse"), value);
+}

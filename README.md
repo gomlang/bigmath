@@ -32,7 +32,9 @@ cancel. Addition and subtraction first remove common denominator factors before
 forming cross products, then cancel only against the original denominator GCD.
 Equal denominators need only a numerator addition; coprime denominators produce
 an already reduced result. Zero remains `0/1`, and final numerator/denominator
-limits still apply. Comparison continues to use full cross products.
+limits still apply. `reciprocal` swaps the already reduced magnitudes and
+preserves the numerator's sign without repeating reduction. Zero still returns
+`Error::DivisionByZero`. Comparison continues to use full cross products.
 
 ## Binary Float
 

@@ -236,9 +236,14 @@ impl Rational {
         if self.is_zero() {
             return Result::Err(Error::DivisionByZero)
         }
-        Rational::from_parts(
-            BigInt::from_sign_magnitude(self.is_negative(), self.denominator_value),
-            self.numerator_value.abs(),
+        Result::Ok(
+            Rational {
+                numerator_value: BigInt::from_sign_magnitude(
+                    self.is_negative(),
+                    self.denominator_value,
+                ),
+                denominator_value: self.numerator_value.abs(),
+            },
         )
     }
 

@@ -1,0 +1,24 @@
+package tests;
+
+use ecosystem::bigint::{BigInt, BigUint};
+use ecosystem::bigmath::{Error, Rational, MAX_RATIONAL_BITS};
+use std::testing;
+
+#[test]
+fn reciprocal_preserves_boundary_values_across_module_boundary() -> () {
+    let large = testing::expect_ok(BigUint::one().shl(MAX_RATIONAL_BITS - 1), "boundary");
+    let denominator = large.add(BigUint::one());
+    let value = testing::expect_ok(
+        Rational::from_parts(BigInt::from_sign_magnitude(true, large), denominator),
+        "coprime boundary fraction",
+    );
+    let inverse = testing::expect_ok(value.reciprocal(), "inverse");
+    testing::assert_eq(inverse.numerator(), BigInt::from_sign_magnitude(true, denominator));
+    testing::assert_eq(inverse.denominator(), large);
+    testing::assert_eq(testing::expect_ok(inverse.reciprocal(), "double inverse"), value);
+    testing::assert_eq(testing::expect_ok(value.mul(inverse), "identity"), Rational::one());
+    testing::assert_eq(
+        testing::expect_err(Rational::from_i64(0).reciprocal(), "zero inverse"),
+        Error::DivisionByZero,
+    );
+}
