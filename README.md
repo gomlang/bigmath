@@ -2,7 +2,7 @@
 
 `ecosystem::bigmath` provides immutable, bounded arbitrary-precision rational
 numbers and binary floating-point values in pure GoML. It depends on
-`ecosystem::bigint = "0.1.0"`; decimal arithmetic is a separate base-10 model and
+`ecosystem::bigint = true`; decimal arithmetic is a separate base-10 model and
 is not used here. The `examples/basic` example exercises the
 public API and frozen `math/big` reference vectors.
 
@@ -77,12 +77,12 @@ correctly rounded binary results.
 
 ## Development and examples
 
-Requires GoML 0.1.56 or newer. The `examples/basic/` example shares the root manifest. From the library root, run:
+Requires the [current GoML toolchain](https://github.com/gomlang/verification/blob/main/ci/toolchain.json) with unversioned registry support. The `examples/basic/` example shares the root manifest. From the library root, run:
 
 ```sh
 goml run --example basic
 goml test
-goml verify --timeout 300s
+(cd ../verification && just ecosystem-test bigmath)
 ```
 
-`goml test` builds the example and runs its tests. `goml verify` repeats the example checks as an independent module against an isolated registry snapshot. `(cd ../verification && just ecosystem-test bigmath)` also retains the library-specific smoke and compatibility checks.
+`goml test` builds the example and runs its tests. `(cd ../verification && just ecosystem-test bigmath)` runs the library-specific smoke and compatibility checks.

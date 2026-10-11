@@ -2,4 +2,4 @@
 path = "ecosystem::bigmath"
 
 [dependencies]
-"ecosystem::bigint" = "0.1.0"
+"ecosystem::bigint" = true
